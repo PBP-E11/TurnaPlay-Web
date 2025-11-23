@@ -8,7 +8,7 @@
       <h1 class="text-2xl font-bold">Manage Game Accounts</h1>
     </div>
     <div>
-      <button id="ga-add" class="px-3 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700">Add Account</button>
+      <button id="ga-add" class="px-3 py-2 bg-[#494598] text-white rounded hover:bg-[#3d3770]">Add Account</button>
     </div>
   </div>
 
@@ -50,12 +50,70 @@
     const left = document.createElement('div');
     left.innerHTML = `<strong class="text-lg">${it.ingame_name}</strong><div class="text-sm text-gray-600 mt-1">Game: ${it.game_name}</div>`;
     const right = document.createElement('div');
+    const edit = document.createElement('button');
+    edit.className = 'px-3 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 mr-2';
+    edit.textContent = 'Edit';
+
     const del = document.createElement('button');
     del.className = 'px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600';
     del.textContent = 'Delete';
-        del.addEventListener('click', async ()=>{
+    edit.addEventListener('click', async ()=>{
+      // open edit modal, fetch form fragment and prefill with account data
+      try {
+        const formHtmlRes = await fetch('/game-accounts/_form/');
+        const formHtml = await formHtmlRes.text();
+        document.getElementById('ga-modal-body').innerHTML = formHtml;
+        document.getElementById('ga-modal').classList.remove('hidden');
+
+        // fetch account detail
+        const detRes = await fetch(`/game-accounts/${it.id}/`, {credentials: 'same-origin'});
+        if (!detRes.ok) {
+          showToast('Failed to load account', true);
+          return;
+        }
+        const det = await detRes.json();
+
+        const form = document.getElementById('ga-form');
+        if (form) {
+          // set game select and ingame name
+          try { form.game.value = det.game; } catch(e){}
+          try { form.ingame_name.value = det.ingame_name; } catch(e){}
+
+          form.onsubmit = async (e) => {
+            e.preventDefault();
+            const payload = { game: form.game.value, ingame_name: form.ingame_name.value };
+            const resp = await fetch(`/game-accounts/${it.id}/`, {
+              method: 'PATCH',
+              credentials: 'same-origin',
+              headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
+              body: JSON.stringify(payload)
+            });
+            if (resp.ok) {
+              showToast('Account updated.');
+              document.getElementById('ga-modal').classList.add('hidden');
+              load();
+            } else if (resp.status === 403) {
+              showToast('Permission denied', true);
+            } else {
+              const j = await resp.json().catch(()=>({}));
+              showToast('Update failed', true);
+              console.error('Update failed', j);
+            }
+          };
+
+          const cancelBtn = document.getElementById('ga-cancel');
+          if (cancelBtn) cancelBtn.addEventListener('click', ()=>{
+            document.getElementById('ga-modal').classList.add('hidden');
+          });
+        }
+      } catch (err) {
+        console.error('Edit action failed', err);
+        showToast('Failed to open edit form', true);
+      }
+    });
+    
+    del.addEventListener('click', async ()=>{
       if (!confirm('Delete this game account? This action cannot be undone.')) return;
-      // Use DELETE request like in widget
       const resp = await fetch(`/game-accounts/${it.id}/`, {
         method: 'DELETE',
         credentials: 'same-origin',
@@ -72,6 +130,7 @@
         showToast('Delete failed', true);
       }
     });
+    right.appendChild(edit);
     right.appendChild(del);
     div.appendChild(left);
     div.appendChild(right);
