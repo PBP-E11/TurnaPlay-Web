@@ -20,7 +20,6 @@ from django.urls import reverse
 
 from .models import TournamentInvite
 
-# dependency ke app lain
 from user_account.models import UserAccount
 from game_account.models import GameAccount
 from tournament_registration.models import TournamentRegistration, TeamMember
@@ -36,7 +35,6 @@ def _team_size(team: TournamentRegistration) -> int:
 
 
 def _recompute_team_status(team: TournamentRegistration) -> None:
-    """Opsional: set team status valid/invalid berdasarkan ukuran tim terkini."""
     try:
         size = _team_size(team)
     except Exception:
@@ -199,40 +197,43 @@ def api_accept_invite(request: HttpRequest) -> JsonResponse:
 
     invite_id = payload.get("invite_id")
     ga_id = payload.get("game_account_id")
-    invite = get_object_or_404(TournamentInvite, pk=invite_id, user_account=request.user)
 
-    if invite.status != "pending":
-        return JsonResponse({"ok": False, "error": "Invite already processed."}, status=400)
+    if not invite_id or not ga_id:
+        return JsonResponse(
+            {"ok": False, "error": "Missing invite_id or game_account_id."},
+            status=400,
+        )
 
-    team = invite.tournament_registration
+    invite = get_object_or_404(
+        TournamentInvite,
+        pk=invite_id,
+        user_account=request.user,
+    )
+    game_account = get_object_or_404(
+        GameAccount,
+        pk=ga_id,
+        user=request.user,
+        active=True,
+    )
 
-    # kapasitas tim
-    size = _team_size(team)
-    current_members = TeamMember.objects.filter(team=team).count()
-    if current_members >= size:
-        return JsonResponse({"ok": False, "error": "Team is already full."}, status=400)
-
-    # ambil game account & validasi pemilik + game-nya cocok
-    ga = get_object_or_404(GameAccount, pk=ga_id, user=request.user, active=True)
-    expected_game_id = team.tournament.tournament_format.game_id
-    if str(ga.game_id) != str(expected_game_id):
-        return JsonResponse({"ok": False, "error": "Game account does not match tournament game."}, status=400)
-
-    # buat TeamMember menggunakan rule di tournament_registration
-    member = TeamMember(team=team, game_account=ga, is_leader=False)
     try:
-        member.full_clean()
-        member.save()
+        invite.accept(game_account)
     except ValidationError as e:
-        return JsonResponse({"ok": False, "error": e.message_dict if hasattr(e, "message_dict") else e.messages}, status=400)
+        if hasattr(e, "message_dict"):
+            flat = []
+            for v in e.message_dict.values():
+                if isinstance(v, (list, tuple)):
+                    flat.extend(v)
+                else:
+                    flat.append(str(v))
+            msg = " ".join(flat)
+        else:
+            msg = " ".join(e.messages)
 
-    invite.status = "accepted"
-    invite.save(update_fields=["status"])
+        return JsonResponse({"ok": False, "error": msg}, status=400)
 
-    _recompute_team_status(team)
-
+    _recompute_team_status(invite.tournament_registration)
     return JsonResponse({"ok": True})
-
 
 @login_required
 @transaction.atomic
