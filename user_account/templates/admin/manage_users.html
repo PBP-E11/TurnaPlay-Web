@@ -76,14 +76,10 @@
                 </div>
 
                 <!-- Stats -->
-                <div class="grid grid-cols-2 gap-4 mb-6">
+                <div class="mb-6">
                     <div class="bg-white border border-gray-200 p-5 rounded-xl">
                         <div class="text-gray-500 text-xs mb-1.5">Total Pengguna</div>
                         <div class="text-gray-900 text-2xl font-bold">{{ total_users }} <span class="text-sm font-normal text-gray-600">Pengguna</span></div>
-                    </div>
-                    <div class="bg-white border border-gray-200 p-5 rounded-xl">
-                        <div class="text-gray-500 text-xs mb-1.5">Pengguna Aktif</div>
-                        <div class="text-gray-900 text-2xl font-bold">{{ active_users }} <span class="text-sm font-normal text-gray-600">Pengguna</span></div>
                     </div>
                 </div>
 
@@ -130,13 +126,6 @@
                                     <div class="text-xs text-gray-500 mb-0.5">Role</div>
                                     <span class="px-2.5 py-1 rounded-full text-xs font-semibold {% if user.role == 'user' %}bg-blue-100 text-blue-700{% elif user.role == 'organizer' %}bg-orange-100 text-orange-700{% else %}bg-purple-100 text-purple-700{% endif %}">
                                         {{ user.get_role_display }}
-                                    </span>
-                                </div>
-                                <div class="text-center">
-                                    <div class="text-xs text-gray-500 mb-0.5">Status</div>
-                                    <span class="px-2.5 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1.5 {% if user.is_active %}bg-green-100 text-green-700{% else %}bg-red-100 text-red-700{% endif %}">
-                                        <span class="w-1.5 h-1.5 rounded-full bg-current"></span>
-                                        {% if user.is_active %}Aktif{% else %}Inactive{% endif %}
                                     </span>
                                 </div>
                                 <div>
