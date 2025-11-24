@@ -107,14 +107,15 @@ class TournamentInvite(models.Model):
 
     def clean(self):
         """
-        Dijalankan pada create/update.
         Kita batasi pembuatan undangan hanya jika:
         - turnamen masih aktif
         - tim masih punya kapasitas (berdasar team_size jika tersedia)
         - penerima belum menjadi anggota tim lain pada turnamen yang sama
         """
+        if self.status != self.Status.PENDING:
+            return
         errors = {}
-
+        
         # 1) turnamen aktif
         if not self._is_tournament_active():
             errors["tournament_registration"] = "Pendaftaran turnamen sudah ditutup."
@@ -124,20 +125,19 @@ class TournamentInvite(models.Model):
             errors["tournament_registration"] = "Kapasitas tim sudah penuh."
 
         # 3) satu user satu tim per turnamen
-        if self.status == self.Status.PENDING:
-            try:
-                user_ga_qs = GameAccount.objects.filter(
-                    user=self.user_account, active=True
-                ).values_list("id", flat=True)
-                if TeamMember.objects.filter(
-                    game_account_id__in=list(user_ga_qs),
-                    team__tournament=self.tournament,
-                ).exists():
-                    errors["user_account"] = (
-                        "Pengguna sudah tergabung di tim lain pada turnamen ini."
-                    )
-            except Exception:
-                pass
+        try:
+            user_ga_qs = GameAccount.objects.filter(
+                user=self.user_account, active=True
+            ).values_list("id", flat=True)
+            if TeamMember.objects.filter(
+                game_account_id__in=list(user_ga_qs),
+                team__tournament=self.tournament,
+            ).exists():
+                errors["user_account"] = (
+                    "Pengguna sudah tergabung di tim lain pada turnamen ini."
+                )
+        except Exception:
+            pass
 
         if errors:
             raise ValidationError(errors)

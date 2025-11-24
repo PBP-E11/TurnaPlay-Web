@@ -197,40 +197,40 @@ def api_accept_invite(request: HttpRequest) -> JsonResponse:
 
     invite_id = payload.get("invite_id")
     ga_id = payload.get("game_account_id")
+    invite = get_object_or_404(TournamentInvite, pk=invite_id, user_account=request.user)
 
-    if not invite_id or not ga_id:
-        return JsonResponse(
-            {"ok": False, "error": "Missing invite_id or game_account_id."},
-            status=400,
-        )
+    if invite.status != "pending":
+        return JsonResponse({"ok": False, "error": "Invite already processed."}, status=400)
 
-    invite = get_object_or_404(
-        TournamentInvite,
-        pk=invite_id,
-        user_account=request.user,
-    )
-    game_account = get_object_or_404(
-        GameAccount,
-        pk=ga_id,
-        user=request.user,
-        active=True,
-    )
+    team = invite.tournament_registration
 
+    # kapasitas tim
+    size = _team_size(team)
+    current_members = TeamMember.objects.filter(team=team).count()
+    if current_members >= size:
+        return JsonResponse({"ok": False, "error": "Team is already full."}, status=400)
+
+    # ambil game account & validasi pemilik + game-nya cocok
+    ga = get_object_or_404(GameAccount, pk=ga_id, user=request.user, active=True)
+    expected_game_id = team.tournament.tournament_format.game_id
+    if str(ga.game_id) != str(expected_game_id):
+        return JsonResponse({"ok": False, "error": "Game account does not match tournament game."}, status=400)
+
+    # buat TeamMember menggunakan rule di tournament_registration
+    member = TeamMember(team=team, game_account=ga, is_leader=False)
     try:
-        invite.accept(game_account)
+        invite.accept(ga)
     except ValidationError as e:
         if hasattr(e, "message_dict"):
-            flat = []
-            for v in e.message_dict.values():
-                if isinstance(v, (list, tuple)):
-                    flat.extend(v)
-                else:
-                    flat.append(str(v))
-            msg = " ".join(flat)
+            msg = e.message_dict
         else:
-            msg = " ".join(e.messages)
-
+            msg = e.messages
         return JsonResponse({"ok": False, "error": msg}, status=400)
+    except Exception as e:
+        return JsonResponse(
+            {"ok": False, "error": f"Server error saat menerima undangan: {e}"},
+            status=400,
+        )
 
     _recompute_team_status(invite.tournament_registration)
     return JsonResponse({"ok": True})
