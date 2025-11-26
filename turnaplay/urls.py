@@ -28,6 +28,8 @@ urlpatterns = [
     path('game-accounts/', include('game_account.urls')),
     path('invites/', include('tournament_invite.urls')),
     path('team/', include('tournament_registration.urls')),
+
+    path("api/invites/", include("tournament_invite.api_urls")),
     
     # 3. Main app (with the homepage) is LAST
     # This will handle the root URL ('/') and any other paths

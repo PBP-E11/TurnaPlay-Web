@@ -9,18 +9,12 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.db import IntegrityError, transaction
 from django.db.models import Max, Q, Count
-from django.http import (
-    HttpRequest,
-    HttpResponse,
-    JsonResponse,
-    HttpResponseBadRequest,
-)
+from django.http import (HttpRequest, HttpResponse, JsonResponse, HttpResponseBadRequest)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
 from .models import TournamentInvite
 
-# dependency ke app lain
 from user_account.models import UserAccount
 from game_account.models import GameAccount
 from tournament_registration.models import TournamentRegistration, TeamMember
@@ -36,7 +30,6 @@ def _team_size(team: TournamentRegistration) -> int:
 
 
 def _recompute_team_status(team: TournamentRegistration) -> None:
-    """Opsional: set team status valid/invalid berdasarkan ukuran tim terkini."""
     try:
         size = _team_size(team)
     except Exception:
@@ -221,18 +214,21 @@ def api_accept_invite(request: HttpRequest) -> JsonResponse:
     # buat TeamMember menggunakan rule di tournament_registration
     member = TeamMember(team=team, game_account=ga, is_leader=False)
     try:
-        member.full_clean()
-        member.save()
+        invite.accept(ga)
     except ValidationError as e:
-        return JsonResponse({"ok": False, "error": e.message_dict if hasattr(e, "message_dict") else e.messages}, status=400)
+        if hasattr(e, "message_dict"):
+            msg = e.message_dict
+        else:
+            msg = e.messages
+        return JsonResponse({"ok": False, "error": msg}, status=400)
+    except Exception as e:
+        return JsonResponse(
+            {"ok": False, "error": f"Server error saat menerima undangan: {e}"},
+            status=400,
+        )
 
-    invite.status = "accepted"
-    invite.save(update_fields=["status"])
-
-    _recompute_team_status(team)
-
+    _recompute_team_status(invite.tournament_registration)
     return JsonResponse({"ok": True})
-
 
 @login_required
 @transaction.atomic
