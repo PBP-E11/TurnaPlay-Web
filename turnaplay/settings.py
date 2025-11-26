@@ -31,9 +31,15 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure--irrj78xq#2!x25%wx-3qnltd+
 PRODUCTION = os.getenv('PRODUCTION', 'False').lower() == 'true'
 DEBUG = os.getenv('DEBUG', str(not PRODUCTION)).lower() == 'true'
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'muhammad-fahri41-turnaplay.pbp.cs.ui.ac.id']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '10.0.2.2', 'muhammad-fahri41-turnaplay.pbp.cs.ui.ac.id']
 CSRF_TRUSTED_ORIGINS = ['https://muhammad-fahri41-turnaplay.pbp.cs.ui.ac.id']
 
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SAMESITE = 'None'
+SESSION_COOKIE_SAMESITE = 'None'
 
 # Application definition
 
@@ -49,11 +55,14 @@ INSTALLED_APPS = [
     'user_account',
     'tournament_registration',
     'tournament_invite',
+    'flutter_authentication',
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
