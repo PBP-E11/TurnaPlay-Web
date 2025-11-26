@@ -8,6 +8,7 @@ from django.db.models import Q, Count
 from django.core.paginator import Paginator
 from tournaments.models import Tournament, TournamentParticipant
 from tournament_registration.models import TournamentRegistration, TeamMember
+from game_account.models import GameAccount
 from .models import UserAccount
 from .forms import RegisterForm, LoginForm, ProfileUpdateForm, CreateOrganizerForm
 import json
@@ -18,14 +19,14 @@ import json
 def admin_dashboard(request):
     """Admin dashboard - redirect to manage users by default"""
     if not request.user.is_admin():
-        return HttpResponseForbidden("You don't have permission to access this page.")
+        return render(request, '403.html', status=403)
     return redirect('user_account:admin_manage_users')
 
 @login_required
 def admin_manage_users(request):
     """Admin page to manage all users"""
     if not request.user.is_admin():
-        return HttpResponseForbidden("You don't have permission to access this page.")
+        return render(request, '403.html', status=403)
     # Get admin logged in
     admin = request.user
 
@@ -54,7 +55,6 @@ def admin_manage_users(request):
     
     # Statistics
     total_users = UserAccount.objects.count()
-    active_users = UserAccount.objects.filter(is_active=True).count()
     
     # Pagination
     paginator = Paginator(users, 10)
@@ -65,7 +65,6 @@ def admin_manage_users(request):
         'admin': admin,
         'users': users_page,
         'total_users': total_users,
-        'active_users': active_users,
         'search': search,
         'role_filter': role_filter,
         'status_filter': status_filter,
@@ -78,7 +77,7 @@ def admin_manage_users(request):
 def admin_create_organizer(request):
     """Admin create organizer account"""
     if not request.user.is_admin():
-        return HttpResponseForbidden("You don't have permission to access this page.")
+        render(request, '403.html', status=403)
     
     if request.method == 'POST':
         form = CreateOrganizerForm(request.POST)
@@ -100,14 +99,14 @@ def admin_create_organizer(request):
 def admin_user_detail(request, user_id):
     """Admin view user details"""
     if not request.user.is_admin():
-        return HttpResponseForbidden("You don't have permission to access this page.")
+        render(request, '403.html', status=403)
     
     user = get_object_or_404(UserAccount, id=user_id)
     
     # Get tournaments where user is a participant
     participated_tournaments = Tournament.objects.filter(
-        participants=user
-    ).select_related('organizer', 'tournament_format__game')
+        registrations__members__game_account__user=user
+    ).distinct().select_related('organizer', 'tournament_format__game')
     
     # Get tournaments organized by this user (if organizer)
     organized_tournaments = Tournament.objects.none()
@@ -203,7 +202,7 @@ def admin_manage_tournaments(request):
         'organizer',
         'tournament_format__game'
     ).annotate(
-        participants_count=Count('participants', distinct=True)
+        registered_teams_count=Count('registrations', distinct=True)
     )
     
     # Apply filters
@@ -239,7 +238,7 @@ def admin_manage_tournaments(request):
     
     # Count unique participants across all tournaments
     total_participants = UserAccount.objects.filter(
-        participated_tournaments__isnull=False
+        gameaccount__joined_teams__isnull=False
     ).distinct().count()
     
     # Pagination
@@ -250,7 +249,7 @@ def admin_manage_tournaments(request):
     context = {
         'admin': admin,
         'tournaments': tournaments_page,
-        'total_tournaments': total_tournaments,
+        'total_tournaments': total_tournaments, 
         'active_tournaments': active_tournaments,
         'total_participants': total_participants,
         'search': search,
