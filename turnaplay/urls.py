@@ -23,7 +23,7 @@ urlpatterns = [
     # 1. Path for the Django Admin
     path('django-admin/', admin.site.urls),
     
-    # 2. Unique prefix for each appp
+    # 2. Unique prefix for each app
     path('accounts/', include('user_account.urls')),
     path('game-accounts/', include('game_account.urls')),
     path('invites/', include('tournament_invite.urls')),
