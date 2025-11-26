@@ -9,12 +9,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.db import IntegrityError, transaction
 from django.db.models import Max, Q, Count
-from django.http import (
-    HttpRequest,
-    HttpResponse,
-    JsonResponse,
-    HttpResponseBadRequest,
-)
+from django.http import (HttpRequest, HttpResponse, JsonResponse, HttpResponseBadRequest)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 

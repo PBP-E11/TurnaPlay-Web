@@ -4,12 +4,14 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
-
 from .models import TournamentInvite
 from game_account.models import GameAccount
 from tournament_registration.models import TournamentRegistration, TeamMember
-from .views import _invite_queryset_for_user, _recompute_team_status
+from .views import _invite_queryset_for_user, _recompute_team_status, _is_leader
 from django.core.exceptions import ValidationError
+from user_account.models import UserAccount
+from django.db import IntegrityError
+from django.db.models import Max
 
 def _serialize_invite(invite: TournamentInvite) -> dict:
     t = invite.tournament_registration.tournament
@@ -112,3 +114,213 @@ def api_respond_invite(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"ok": False, "error": msg}, status=400)
 
     return JsonResponse({"ok": True, "status": "rejected"})
+
+@login_required
+@require_http_methods(["POST"])
+@csrf_exempt
+def send_invite(request: HttpRequest) -> JsonResponse:
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("Bad JSON")
+
+    username_or_email = payload.get("username_or_email")
+    registration_id = payload.get("registration_id")
+
+    if not username_or_email or not registration_id:
+        return JsonResponse(
+            {
+                "ok": False,
+                "status": "error",
+                "message": "Missing username_or_email or registration_id.",
+            },
+            status=400,
+        )
+
+    user_to_invite = (
+        UserAccount.objects.filter(username__iexact=username_or_email).first()
+        or UserAccount.objects.filter(email__iexact=username_or_email).first()
+    )
+
+    if not user_to_invite:
+        return JsonResponse(
+            {
+                "ok": False,
+                "status": "error",
+                "message": "User not found.",
+            },
+            status=404,
+        )
+
+    team = get_object_or_404(TournamentRegistration, pk=registration_id)
+
+    if not _is_leader(request.user, team):
+        return JsonResponse(
+            {
+                "ok": False,
+                "status": "error",
+                "message": "Only team leader can invite.",
+            },
+            status=403,
+        )
+
+    if user_to_invite.id == request.user.id:
+        return JsonResponse(
+            {
+                "ok": False,
+                "status": "error",
+                "message": "You cannot invite yourself.",
+            },
+            status=400,
+        )
+
+    same_tournament_member = TeamMember.objects.filter(
+        game_account__user=user_to_invite,
+        team__tournament=team.tournament,
+    ).exists()
+    
+    if same_tournament_member:
+        return JsonResponse(
+            {
+                "ok": False,
+                "status": "error",
+                "message": "Target user already belongs to a team for this tournament.",
+            },
+            status=400,
+        )
+
+    try:
+        invite = TournamentInvite.objects.create(
+            user_account=user_to_invite,
+            tournament_registration=team,
+            status=TournamentInvite.Status.PENDING,
+        )
+    except IntegrityError:
+        return JsonResponse(
+            {
+                "ok": False,
+                "status": "error",
+                "message": "There is already a pending invite for this user & team.",
+            },
+            status=400,
+        )
+    except ValidationError as e:
+        msg = e.messages if hasattr(e, "messages") else str(e)
+        return JsonResponse(
+            {
+                "ok": False,
+                "status": "error",
+                "message": msg,
+            },
+            status=400,
+        )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "status": "success",
+            "message": "Invite sent.",
+            "invite": _serialize_invite(invite),
+        },
+        status=201,
+    )
+
+@login_required
+@require_http_methods(["POST"])
+@csrf_exempt
+def api_cancel_invite(request: HttpRequest) -> JsonResponse:
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("Bad JSON")
+
+    invite_id = payload.get("invite_id")
+    if not invite_id:
+        return JsonResponse(
+            {
+                "ok": False,
+                "status": "error",
+                "message": "invite_id is required.",
+            },
+            status=400,
+        )
+
+    invite = get_object_or_404(TournamentInvite, pk=invite_id)
+    team = invite.tournament_registration
+
+    if not _is_leader(request.user, team):
+        return JsonResponse(
+            {
+                "ok": False,
+                "status": "error",
+                "message": "Only team leader can cancel.",
+            },
+            status=403,
+        )
+
+    # Case 1: undangan masih pending -> hapus row-nya
+    if invite.status == TournamentInvite.Status.PENDING:
+        invite.delete()
+        return JsonResponse(
+            {
+                "ok": True,
+                "status": "cancelled",
+                "invite_id": str(invite_id),
+                "message": "Invite cancelled.",
+            }
+        )
+
+    # Case 2: undangan sudah accepted -> kick member itu dari tim
+    if invite.status == TournamentInvite.Status.ACCEPTED:
+        TeamMember.objects.filter(
+            team=team,
+            game_account__user=invite.user_account,
+        ).delete()
+
+        invite.status = TournamentInvite.Status.REJECTED
+        invite.save(update_fields=["status"])
+        _recompute_team_status(team)
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "status": "member_removed",
+                "invite_id": str(invite.id),
+                "message": "Invite cancelled and member removed.",
+            }
+        )
+
+    # Case lain: udah rejected / expired / whateverrrr
+    return JsonResponse(
+        {
+            "ok": False,
+            "status": "error",
+            "message": "Nothing to cancel.",
+        },
+        status=400,
+    )
+
+@login_required
+@require_http_methods(["GET"])
+def api_new_invites(request: HttpRequest) -> JsonResponse:
+    latest = (
+        TournamentInvite.objects.filter(
+            user_account=request.user,
+            status=TournamentInvite.Status.PENDING,
+        )
+        .aggregate(x=Max("created_at"))
+        .get("x")
+    )
+
+    count_pending = TournamentInvite.objects.filter(
+        user_account=request.user,
+        status=TournamentInvite.Status.PENDING,
+    ).count()
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "pending_count": count_pending,
+            "latest_created_at": latest.isoformat() if latest else None,
+        }
+    )
