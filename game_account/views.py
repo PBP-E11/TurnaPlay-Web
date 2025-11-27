@@ -34,9 +34,9 @@ def game_accounts_list_create(request):
         for ga in qs:
             data.append({
                 'id': str(ga.id),
-                'user_id': ga.user_id,
-                'game_id': str(ga.game_id),
-                'game_name': ga.game.name,
+                'user': ga.user_id,
+                'game': str(ga.game_id),
+                'game_name': getattr(ga.game, 'name', None),
                 'ingame_name': ga.ingame_name,
                 'active': ga.active
             })
@@ -65,7 +65,6 @@ def game_accounts_list_create(request):
 class GameAccountDetail(View):
     def get(self, request, pk):
         ga = get_object_or_404(GameAccount, pk=pk)
-        # return expanded JSON with related game name for convenience in frontend
         data = {
             'id': str(ga.id),
             'user': ga.user_id,
@@ -85,6 +84,84 @@ class GameAccountDetail(View):
         ga.active = False
         ga.save()   
         return JsonResponse({}, status=204)
+
+    def _update_instance_from_payload(self, request, ga, partial=False):
+        try:
+            payload = json.loads(request.body.decode('utf-8'))
+        except json.JSONDecodeError:
+            return JsonResponse({'detail': 'Invalid JSON'}, status=400)
+
+        # If partial, allow missing fields; otherwise require form to validate full payload
+        form = GameAccountForm(data=payload, instance=ga)
+        if form.is_valid():
+            try:
+                with transaction.atomic():
+                    updated = form.save(commit=False)
+                    # don't allow changing owner here
+                    updated.user = ga.user
+                    updated.save()
+            except IntegrityError:
+                return JsonResponse({'detail': 'Account with that in-game name already exists for this game.'}, status=400)
+            data = {
+                'id': str(updated.id),
+                'user': updated.user_id,
+                'game': str(updated.game_id),
+                'game_name': getattr(updated.game, 'name', None),
+                'ingame_name': updated.ingame_name,
+                'active': updated.active,
+            }
+            return JsonResponse(data, status=200)
+        else:
+            return JsonResponse({'errors': form.errors}, status=400)
+
+    def put(self, request, pk):
+        # Full update
+        if not request.user.is_authenticated:
+            return HttpResponseForbidden()
+        ga = get_object_or_404(GameAccount, pk=pk)
+        if ga.user != request.user and not request.user.is_staff:
+            return HttpResponseForbidden()
+        return self._update_instance_from_payload(request, ga, partial=False)
+
+    def patch(self, request, pk):
+        # Partial update
+        if not request.user.is_authenticated:
+            return HttpResponseForbidden()
+        ga = get_object_or_404(GameAccount, pk=pk)
+        if ga.user != request.user and not request.user.is_staff:
+            return HttpResponseForbidden()
+        try:
+            payload = json.loads(request.body.decode('utf-8'))
+        except json.JSONDecodeError:
+            return JsonResponse({'detail': 'Invalid JSON'}, status=400)
+        data = {
+            'game': ga.game_id,
+            'ingame_name': ga.ingame_name,
+        }
+        # overwrite with supplied fields
+        if 'game' in payload:
+            data['game'] = payload.get('game')
+        if 'ingame_name' in payload:
+            data['ingame_name'] = payload.get('ingame_name')
+        form = GameAccountForm(data=data, instance=ga)
+        if form.is_valid():
+            try:
+                with transaction.atomic():
+                    updated = form.save(commit=False)
+                    updated.user = ga.user
+                    updated.save()
+            except IntegrityError:
+                return JsonResponse({'detail': 'Account with that in-game name already exists for this game.'}, status=400)
+            data = {
+                'id': str(updated.id),
+                'user': updated.user_id,
+                'game': str(updated.game_id),
+                'game_name': getattr(updated.game, 'name', None),
+                'ingame_name': updated.ingame_name,
+                'active': updated.active,
+            }
+            return JsonResponse(data, status=200)
+        return JsonResponse({'errors': form.errors}, status=400)
     
 @login_required
 def select_widget(request):
@@ -104,7 +181,6 @@ def list_page(request):
 
 @login_required
 def form_partial(request):
-    # return the form fragment used by the modal (games list required)
     games = Game.objects.all()
     return render(request, 'game_account/_form.html', {'games': games})
 

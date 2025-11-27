@@ -107,14 +107,15 @@ class TournamentInvite(models.Model):
 
     def clean(self):
         """
-        Dijalankan pada create/update.
         Kita batasi pembuatan undangan hanya jika:
         - turnamen masih aktif
         - tim masih punya kapasitas (berdasar team_size jika tersedia)
         - penerima belum menjadi anggota tim lain pada turnamen yang sama
         """
+        if self.status != self.Status.PENDING:
+            return
         errors = {}
-
+        
         # 1) turnamen aktif
         if not self._is_tournament_active():
             errors["tournament_registration"] = "Pendaftaran turnamen sudah ditutup."
@@ -124,9 +125,6 @@ class TournamentInvite(models.Model):
             errors["tournament_registration"] = "Kapasitas tim sudah penuh."
 
         # 3) satu user satu tim per turnamen
-        #    Cek melalui game accounts milik user -> TeamMember pada turnamen yang sama
-        #    (Kalau user belum punya game account, check ini akan lolos dan
-        #    baru diputus saat accept.)
         try:
             user_ga_qs = GameAccount.objects.filter(
                 user=self.user_account, active=True
