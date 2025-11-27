@@ -55,7 +55,11 @@ INSTALLED_APPS = [
     'user_account',
     'tournament_registration',
     'tournament_invite',
-    'flutter_authentication',
+    'flutter_user_account',
+    'flutter_game_account',
+    'flutter_tournament_invite',
+    'flutter_tournament_registration',
+    'flutter_tournaments',
     'corsheaders',
 ]
 
