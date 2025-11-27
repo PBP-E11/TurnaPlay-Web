@@ -215,6 +215,10 @@
   </template>
 
   <script>
+    const tournamentListJsonUrl = "{% url 'tournaments:tournament-list-json' %}";
+  </script>
+
+  <script>
     // small helper moved to top-level scope to satisfy static analysis
     function safeText(value) {
       return value == null ? "" : String(value);
@@ -432,7 +436,7 @@
 
         try {
           // --- BUG FIX: Changed 'const' to 'let' ---
-          let url = `/api/tournaments/?page=${encodeURIComponent(pageNumber)}`;
+          let url = `${tournamentListJsonUrl}?page=${encodeURIComponent(pageNumber)}`;
 
           if (currentGameFilter) {
             url += `&game_name=${encodeURIComponent(currentGameFilter)}`;

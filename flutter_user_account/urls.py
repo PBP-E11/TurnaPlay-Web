@@ -1,7 +1,7 @@
 from django.urls import path
-from flutter_authentication.views import login, register
+from flutter_user_account.views import login, register
 
-app_name = 'flutter_authentication'
+app_name = 'flutter_user_account'
 
 urlpatterns = [
     path('login/', login, name='login'),
