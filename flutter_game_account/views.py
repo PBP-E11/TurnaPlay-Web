@@ -47,9 +47,7 @@ def game_accounts_list_create(request):
         from django.contrib.auth import get_user_model
         User = get_user_model()
         if not request.user.is_authenticated:
-            if not settings.DEBUG:
-                return HttpResponseForbidden()
-            request.user = User.objects.first()
+            return HttpResponseForbidden()
 
         try:
             payload = json.loads(request.body.decode('utf-8'))
@@ -69,6 +67,16 @@ def game_accounts_list_create(request):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class GameAccountDetail(View):
+    def dispatch(self, request, *args, **kwargs):
+        if request.method == 'POST':
+            try:
+                payload = json.loads(request.body.decode())
+                if payload.get('_method') == 'DELETE':
+                    request.method = 'DELETE'
+            except Exception:
+                pass
+        return super().dispatch(request, *args, **kwargs)
+    
     def get(self, request, pk):
         ga = get_object_or_404(GameAccount, pk=pk)
         data = {
@@ -89,7 +97,7 @@ class GameAccountDetail(View):
             return HttpResponseForbidden()
         ga.active = False
         ga.save()   
-        return JsonResponse({}, status=204)
+        return JsonResponse({'detail': 'deleted'}, status=200)
 
     def _update_instance_from_payload(self, request, ga, partial=False):
         try:
