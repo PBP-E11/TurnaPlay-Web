@@ -73,6 +73,8 @@ class GameAccountDetail(View):
                 payload = json.loads(request.body.decode())
                 if payload.get('_method') == 'DELETE':
                     request.method = 'DELETE'
+                if payload.get('_method') == 'PATCH':
+                    request.method = 'PATCH'
             except Exception:
                 pass
         return super().dispatch(request, *args, **kwargs)
