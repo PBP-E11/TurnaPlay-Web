@@ -1,11 +1,16 @@
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import get_user_model
 import json
 from django.core.paginator import Paginator
 from django.db.models import Q, Count
 from datetime import datetime, timedelta
+from tournament_registration.models import TournamentRegistration
+from tournaments.models import Tournament, TournamentFormat, Game
+from user_account.models import UserAccount
+from django.utils import timezone
 
 User = get_user_model()
 
@@ -427,4 +432,316 @@ def delete_user(request, user_id):
         return JsonResponse({
             "status": False,
             "message": f"Error deleting user: {str(e)}"
+        }, status=500)
+
+@csrf_exempt
+def list_tournaments(request):
+    if request.method != 'GET':
+        return JsonResponse({
+            "status": False,
+            "message": "Invalid method"
+        }, status=405)
+    
+    # Check admin authentication
+    if not is_admin(request.user):
+        return JsonResponse({
+            "status": False,
+            "message": "Unauthorized. Admin access required."
+        }, status=403)
+    
+    try:
+        # all tournaments query
+        tournaments_query = Tournament.objects.select_related(
+            'tournament_format',
+            'tournament_format__game',
+            'organizer'
+        ).prefetch_related('participants').all()
+        
+        # Filter by game
+        game_filter = request.GET.get('game', None)
+        if game_filter:
+            tournaments_query = tournaments_query.filter(
+                tournament_format__game_id=game_filter
+            )
+        
+        # Filter by status
+        status_filter = request.GET.get('status', None)
+        if status_filter:
+            today = timezone.localdate()
+            
+            if status_filter == 'upcoming':
+                tournaments_query = tournaments_query.filter(tournament_date__gte=today)
+            elif status_filter == 'past':
+                tournaments_query = tournaments_query.filter(tournament_date__lt=today)
+            elif status_filter == 'tba':
+                tournaments_query = tournaments_query.filter(tournament_date__isnull=True)
+        
+        # Search by tournament name or description
+        search_query = request.GET.get('search', '').strip()
+        if search_query:
+            tournaments = tournaments.filter(
+                Q(tournament_name__icontains=search_query) | 
+                Q(organizer__username__icontains=search_query) |
+                Q(tournament_format__game__name__icontains=search_query)
+            )
+        
+        # Calculate statistics BEFORE pagination        
+        total_tournaments = tournaments_query.count()
+        today = timezone.localdate()
+        active_tournaments = Tournament.objects.filter(
+            tournament_date__gte=today
+        ).count()
+
+        # Count unique participants across all tournaments
+        total_participants = UserAccount.objects.filter(
+            gameaccount__joined_teams__isnull=False
+        ).distinct().count()
+        
+        # Pagination
+        page = int(request.GET.get('page', 1))
+        page_size = min(int(request.GET.get('page_size', 10)), 100)
+        
+        paginator = Paginator(tournaments_query, page_size)
+        tournaments_page = paginator.get_page(page)
+        
+        # Serialize tournament data
+        tournaments_data = []
+        for tournament in tournaments_page:
+            tournaments_data.append({
+                "id": str(tournament.id),
+                "tournament_name": tournament.tournament_name,
+                "description": tournament.description,
+                "tournament_date": tournament.tournament_date.isoformat() if tournament.tournament_date else None,
+                "prize_pool": tournament.prize_pool,
+                "banner": tournament.banner,
+                "team_maximum_count": tournament.team_maximum_count,
+                "status": tournament.status,
+                "participants_count": tournament.participants_count(),
+                "created_at": tournament.created_at.isoformat(),
+                "updated_at": tournament.updated_at.isoformat(),
+                
+                # Tournament Format info
+                "tournament_format": {
+                    "id": str(tournament.tournament_format.id),
+                    "name": tournament.tournament_format.name,
+                    "team_size": tournament.tournament_format.team_size,
+                    "game": {
+                        "id": str(tournament.tournament_format.game.id),
+                        "name": tournament.tournament_format.game.name
+                    }
+                },
+                
+                # Organizer info
+                "organizer": {
+                    "id": str(tournament.organizer.id) if tournament.organizer else None,
+                    "username": tournament.organizer.username if tournament.organizer else None,
+                    "display_name": tournament.organizer.display_name if tournament.organizer else None
+                } if tournament.organizer else None
+            })
+        
+        return JsonResponse({
+            "status": True,
+            "data": {
+                "tournaments": tournaments_data,
+                "pagination": {
+                    "current_page": tournaments_page.number,
+                    "total_pages": paginator.num_pages,
+                    "total_items": paginator.count,
+                    "page_size": page_size,
+                    "has_next": tournaments_page.has_next(),
+                    "has_previous": tournaments_page.has_previous()
+                },
+                "statistics": {
+                    "total_tournaments": total_tournaments,
+                    "active_tournaments": active_tournaments,
+                    "total_participant": total_participants,
+                }
+            }
+        }, status=200)
+        
+    except ValueError as e:
+        return JsonResponse({
+            "status": False,
+            "message": "Invalid pagination parameters"
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            "status": False,
+            "message": f"Error fetching tournaments: {str(e)}"
+        }, status=500)
+
+
+@csrf_exempt
+def tournament_detail(request, tournament_id):
+    if request.method != 'GET':
+        return JsonResponse({
+            "status": False,
+            "message": "Invalid method"
+        }, status=405)
+    
+    # Check admin authentication
+    if not is_admin(request.user):
+        return JsonResponse({
+            "status": False,
+            "message": "Unauthorized. Admin access required."
+        }, status=403)
+    
+    try:
+        # Get tournament with related data
+        tournament = get_object_or_404(
+            Tournament.objects.select_related(
+                'organizer', 
+                'tournament_format__game'
+            ),
+            id=tournament_id
+        )
+        
+        # Get participants data
+        participants_data = []
+        for participant_record in tournament.participant_records.all():
+            participants_data.append({
+                "id": str(participant_record.id),
+                "user": {
+                    "id": str(participant_record.participant.id),
+                    "username": participant_record.participant.username,
+                    "display_name": participant_record.participant.display_name,
+                    "email": participant_record.participant.email,
+                    "profile_image": participant_record.participant.profile_image
+                },
+                "status": participant_record.status,
+                "team_name": participant_record.team_name,
+                "registered_at": participant_record.registered_at.isoformat()
+            })
+        
+        # Get all tournament registrations (teams)
+        registrations = TournamentRegistration.objects.filter(
+            tournament=tournament
+        ).prefetch_related('members__game_account__user')
+
+        registrations_data = []
+        for registration in registrations:
+            # Get team members
+            members_data = []
+            for member in registration.members.all():
+                members_data.append({
+                    "id": str(member.id),
+                    "is_leader": member.is_leader,
+                    "game_account": {
+                        "id": str(member.game_account.id) if member.game_account else None,
+                        "ingame_name": member.game_account.ingame_name if member.game_account else None,
+                        "user": {
+                            "id": str(member.game_account.user.id) if member.game_account and member.game_account.user else None,
+                            "username": member.game_account.user.username if member.game_account and member.game_account.user else None,
+                            "display_name": member.game_account.user.display_name if member.game_account and member.game_account.user else None,
+                        } if member.game_account and member.game_account.user else None
+                    } if member.game_account else None
+                })
+            
+            registrations_data.append({
+                "id": str(registration.id),
+                "team_name": registration.team_name,
+                "created_at": registration.created_at.isoformat() if hasattr(registration, 'created_at') and registration.created_at else None,
+                "members": members_data,
+                "members_count": len(members_data)
+            })
+
+        # Prepare detailed tournament data
+        tournament_data = {
+            "id": str(tournament.id),
+            "tournament_name": tournament.tournament_name,
+            "description": tournament.description,
+            "tournament_date": tournament.tournament_date.isoformat() if tournament.tournament_date else None,
+            "prize_pool": tournament.prize_pool,
+            "banner": tournament.banner,
+            "team_maximum_count": tournament.team_maximum_count,
+            "status": tournament.status,
+            "created_at": tournament.created_at.isoformat(),
+            "updated_at": tournament.updated_at.isoformat(),
+            
+            # Tournament Format
+            "tournament_format": {
+                "id": str(tournament.tournament_format.id),
+                "name": tournament.tournament_format.name,
+                "team_size": tournament.tournament_format.team_size,
+                "game": {
+                    "id": str(tournament.tournament_format.game.id),
+                    "name": tournament.tournament_format.game.name
+                }
+            },
+            
+            # Registration team
+            "registration": registrations_data,
+
+            # Organizer
+            "organizer": {
+                "id": str(tournament.organizer.id) if tournament.organizer else None,
+                "username": tournament.organizer.username if tournament.organizer else None,
+                "display_name": tournament.organizer.display_name if tournament.organizer else None,
+                "email": tournament.organizer.email if tournament.organizer else None,
+                "role": tournament.organizer.role if tournament.organizer else None
+            } if tournament.organizer else None,
+            
+            # Participants
+            "participants": participants_data,
+        }
+        
+        return JsonResponse({
+            "status": True,
+            "data": tournament_data
+        }, status=200)
+        
+    except Tournament.DoesNotExist:
+        return JsonResponse({
+            "status": False,
+            "message": "Tournament not found"
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            "status": False,
+            "message": f"Error fetching tournament details: {str(e)}"
+        }, status=500)
+
+
+@csrf_exempt
+def delete_tournament(request, tournament_id):
+    if request.method != 'DELETE':
+        return JsonResponse({
+            "status": False,
+            "message": "Invalid method"
+        }, status=405)
+    
+    # Check admin authentication
+    if not is_admin(request.user):
+        return JsonResponse({
+            "status": False,
+            "message": "Unauthorized. Admin access required."
+        }, status=403)
+    
+    try:
+        # Get tournament
+        tournament = Tournament.objects.get(id=tournament_id)
+        tournament_name = tournament.tournament_name
+        
+        # Check if tournament has participants
+        participant_count = tournament.participants_count()
+        
+        # Delete tournament
+        # This will CASCADE delete all participant records
+        tournament.delete()
+        
+        return JsonResponse({
+            "status": True,
+            "message": f"Tournament '{tournament_name}' has been deleted successfully",
+            "deleted_participants": participant_count
+        }, status=200)
+        
+    except Tournament.DoesNotExist:
+        return JsonResponse({
+            "status": False,
+            "message": "Tournament not found"
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            "status": False,
+            "message": f"Error deleting tournament: {str(e)}"
         }, status=500)
