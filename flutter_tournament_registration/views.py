@@ -135,6 +135,7 @@ def create_team(request: HttpRequest) -> HttpResponse:
 
 @csrf_exempt
 @require_POST
+@api_login_required
 @exception_wrapper
 def get_team(request: HttpRequest) -> HttpResponse:
     """ 
@@ -147,7 +148,7 @@ def get_team(request: HttpRequest) -> HttpResponse:
         "user_account_id": <uuid>,
         "tournament_id": <uuid>
     }
-    OR LOGGED IN
+    OR
     {
         "tournament_id": <uuid>
     }
@@ -159,9 +160,15 @@ def get_team(request: HttpRequest) -> HttpResponse:
             "team_id": <uuid>,
             "tournament_id": <uuid>,
             "team_name": <str>,
+            "is_user_leader": <bool>,
             "members": [
-                {"game_account_id": <uuid>, "team_id": <uuid>, "is_leader": True}, # Once
-                {"game_account_id": <uuid>, "team_id": <uuid>, "is_leader": False} # Up to (team size - 1)
+                {
+                    "game_account_id": <uuid>,
+                    "game_account_name": <str>,
+                    "user_account_name": <str>,
+                    "team_id": <uuid>,
+                    "is_leader": True // Appears only once
+                }
             ]
         }
     }
@@ -197,25 +204,28 @@ def get_team(request: HttpRequest) -> HttpResponse:
                 user_account: UserAccount = UserAccount.objects.get(pk=user_account_id)
             except UserAccount.DoesNotExist:
                 raise RejectException('User does not exist', ERR_NOT_FOUND)
-        elif request.user.is_authenticated:
-            user_account = request.user
         else:
-            raise RejectException('Not logged in and no user provided', ERR_MALFORMED_DATA)
+            user_account = request.user
 
         try:
             team: TournamentRegistration = TournamentRegistration.objects.get(members__game_account__user=user_account, tournament=tournament)
         except TournamentRegistration.DoesNotExist:
             raise RejectException('No match found', ERR_NOT_FOUND)
 
-    members = []
-    members.append({
-        "game_account_id": TeamMember.objects.get(team=team, is_leader=True).game_account.id,
+    member_data = []
+    leader: TeamMember = TeamMember.objects.get(team=team, is_leader=True)
+    member_data.append({
+        "game_account_id": leader.game_account.id,
+        "game_account_name": leader.game_account.ingame_name,
+        "user_account_name": leader.game_account.user.username,
         "team_id": str(team.id),
         "is_leader": True,
     })
     [
-        members.append({
+        member_data.append({
             "game_account_id": member.game_account.id,
+            "game_account_name": member.game_account.ingame_name,
+            "user_account_name": member.game_account.user.username,
             "team_id": str(team.id),
             "is_leader": False,
         })
@@ -226,7 +236,10 @@ def get_team(request: HttpRequest) -> HttpResponse:
         "team_id": team.id,
         "tournament_id": team.tournament.id,
         "team_name": team.team_name,
-        "members": members,
+        "user_id": request.user.id,
+        "is_user_leader": _is_user_team_leader(request.user, team),
+        "is_user_in_team": TeamMember.objects.filter(team=team, game_account__user=request.user).exists(),
+        "members": member_data,
     })
 
 @csrf_exempt

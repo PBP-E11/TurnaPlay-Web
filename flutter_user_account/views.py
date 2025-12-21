@@ -11,6 +11,7 @@ from tournament_registration.models import TournamentRegistration
 from tournaments.models import Tournament, TournamentFormat, Game
 from user_account.models import UserAccount
 from django.utils import timezone
+from django.views.decorators.http import require_http_methods
 
 User = get_user_model()
 
@@ -881,3 +882,86 @@ def get_user_tournaments(request):
         })
 
     return JsonResponse({"status": True, "tournaments": data}, status=200)
+    
+@csrf_exempt
+def update_user(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            user_id = data.get('user_id')
+            
+            user = UserAccount.objects.get(id=user_id)
+            
+            # Update fields (username tidak diupdate)
+            user.email = data.get('email', user.email)
+            user.display_name = data.get('display_name', user.display_name)
+            user.role = data.get('role', user.role)
+            user.is_active = data.get('is_active', user.is_active)
+            
+            user.save()
+            
+            return JsonResponse({
+                'status': True,
+                'message': 'User updated successfully',
+                'data': {
+                    'id': str(user.id),
+                    'username': user.username,
+                    'email': user.email,
+                    'display_name': user.display_name,
+                    'role': user.role,
+                    'is_active': user.is_active,
+                }
+            })
+            
+        except UserAccount.DoesNotExist:
+            return JsonResponse({'status': False, 'message': 'User not found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': False, 'message': str(e)}, status=500)
+    
+    return JsonResponse({'status': False, 'message': 'Invalid method'}, status=405)
+
+
+# UPDATE TOURNAMENT
+@csrf_exempt
+def update_tournament(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            tournament_id = data.get('tournament_id')
+            
+            tournament = Tournament.objects.get(id=tournament_id)
+            
+            # Update fields
+            tournament.tournament_name = data.get('tournament_name', tournament.tournament_name)
+            tournament.description = data.get('description', tournament.description)
+            tournament.prize_pool = data.get('prize_pool', tournament.prize_pool)
+            tournament.team_maximum_count = data.get('team_maximum_count', tournament.team_maximum_count)
+            
+            # Update date if provided
+            if data.get('tournament_date'):
+                tournament.tournament_date = datetime.strptime(
+                    data.get('tournament_date'), 
+                    '%Y-%m-%d'
+                ).date()
+            
+            tournament.save()
+            
+            return JsonResponse({
+                'status': True,
+                'message': 'Tournament updated successfully',
+                'data': {
+                    'id': str(tournament.id),
+                    'tournament_name': tournament.tournament_name,
+                    'description': tournament.description,
+                    'prize_pool': tournament.prize_pool,
+                    'team_maximum_count': tournament.team_maximum_count,
+                    'tournament_date': tournament.tournament_date.isoformat() if tournament.tournament_date else None,
+                }
+            })
+            
+        except Tournament.DoesNotExist:
+            return JsonResponse({'status': False, 'message': 'Tournament not found'}, status=404)
+        except Exception as e:
+            return JsonResponse({'status': False, 'message': str(e)}, status=500)
+    
+    return JsonResponse({'status': False, 'message': 'Invalid method'}, status=405)
