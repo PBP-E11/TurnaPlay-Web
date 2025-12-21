@@ -2,7 +2,7 @@ import json
 import uuid
 import traceback
 from django.http import JsonResponse, HttpResponse, HttpRequest
-from django.views.decorators.http import require_GET, require_POST, require_http_methods
+from django.views.decorators.http import require_POST
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError, transaction
 from django.views.decorators.csrf import csrf_exempt
@@ -94,7 +94,7 @@ def create_team(request: HttpRequest) -> HttpResponse:
     }
     """
     try:
-        data = json.loads(request.body)
+        data: dict = json.loads(request.body)
         tournament_id: uuid.UUID = uuid.UUID(data['tournament_id'])
         leader_game_account_id: uuid.UUID = uuid.UUID(data['leader_game_account_id'])
         team_name: str = data['team_name']
@@ -133,13 +133,19 @@ def create_team(request: HttpRequest) -> HttpResponse:
 
     return success({'team_id': str(instance.id)})
 
-@require_GET
+@require_POST
 @exception_wrapper
 def get_team(request: HttpRequest) -> HttpResponse:
     """ 
-    Accepts GET with parameter
-    team_id=<uuid> OR
-    user_account_id=<uuid>&tournament_id=<uuid>
+    Accepts POST
+    {
+        "team_id": <uuid>
+    }
+    OR
+    {
+        "user_account_id": <uuid>,
+        "tournament_id": <uuid>
+    }
 
     On success returns
     {
@@ -157,9 +163,13 @@ def get_team(request: HttpRequest) -> HttpResponse:
 
     404 is guaranteed if user is not in a team
     """
-    team_id: uuid.UUID = request.GET.get('team_id')
-    user_account_id: uuid.UUID = request.GET.get('user_account_id')
-    tournament_id: uuid.UUID = request.GET.get('tournament_id')
+    try:
+        data: dict = json.loads(request.body)
+        team_id: uuid.UUID | None = data.get('team_id') ? uuid.UUID(data.get('team_id')): None
+        user_account_id: uuid.UUID | None = data.get('user_account_id') ? uuid.UUID(data.get('user_account_id')): None
+        tournament_id: uuid.UUID | None = data.get('tournament_id') ? uuid.UUID(data.get('tournament_id')): None
+    except (KeyError, ValueError, json.JSONDecodeError):
+        raise RejectException('Malformed data', ERR_MALFORMED_DATA)
 
     if team_id is None and user_account_id is None and tournament_id is None:
         raise RejectException('Missing parameter(s)', ERR_MALFORMED_DATA)
@@ -231,7 +241,7 @@ def update_team(request: HttpRequest) -> HttpResponse:
     }
     """
     try:
-        data = json.loads(request.body)
+        data: dict = json.loads(request.body)
         team_id: uuid.UUID = uuid.UUID(data['team_id'])
         team_name: str = data['team_name']
     except (KeyError, ValueError, json.JSONDecodeError):
@@ -319,7 +329,7 @@ def update_member(request: HttpRequest) -> HttpResponse:
     }
     """
     try:
-        data = json.loads(request.body)
+        data: dict = json.loads(request.body)
         team_id: uuid.UUID = uuid.UUID(data['team_id'])
         game_account_id: uuid.UUID = uuid.UUID(data['game_account_id'])
     except (KeyError, ValueError, json.JSONDecodeError):
