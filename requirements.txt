@@ -2,7 +2,6 @@ asgiref==3.10.0
 certifi==2025.10.5
 charset-normalizer==3.4.3
 Django==5.2.7
-django-cors-headers==4.9.0
 gunicorn==23.0.0
 idna==3.10
 packaging==25.0
@@ -12,3 +11,4 @@ requests==2.32.5
 sqlparse==0.5.3
 urllib3==2.5.0
 whitenoise==6.11.0
+django-cors-headers
