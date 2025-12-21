@@ -458,7 +458,7 @@ def user_detail(request, user_id):
 
 
 @csrf_exempt
-def delete_user(request, user_id):
+def delete_user(request):
     if request.method != 'POST':
         return JsonResponse({
             "status": False,
@@ -475,7 +475,7 @@ def delete_user(request, user_id):
     try:
         # Get user by ID
         data = json.loads(request.body)
-        user_id = data.get('user_id')
+        user_id = data.get("user_id")
 
         user = User.objects.get(id=user_id)
         
@@ -487,12 +487,11 @@ def delete_user(request, user_id):
             }, status=400)
         
         # Delete
-        username = user.username
         user.delete()
         
         return JsonResponse({
             "status": True,
-            "message": f"User {username} has been deleted successfully"
+            "message": 'User deleted successfully'
         }, status=200)
         
     except User.DoesNotExist:
@@ -809,7 +808,7 @@ def tournament_detail(request, tournament_id):
 
 
 @csrf_exempt
-def delete_tournament(request, tournament_id):
+def delete_tournament(request):
     if request.method != 'POST':
         return JsonResponse({
             "status": False,
