@@ -17,9 +17,10 @@ User = get_user_model()
 
 @csrf_exempt
 def login(request):
-    username = request.POST['username']
-    password = request.POST['password']
+    username = request.POST.get('username')
+    password = request.POST.get('password')
     user = authenticate(username=username, password=password)
+
     if user is not None:
         if user.is_active:
             auth_login(request, user)
@@ -29,22 +30,22 @@ def login(request):
                 "status": True,
                 "message": "Login successful!",
                 "id": user.id,
-                # Add other data if you want to send data to Flutter.
                 "role": getattr(user, 'role', None),
-                "is_admin": getattr(user, 'is_admin', lambda: False)()
+                "is_admin": getattr(user, 'is_admin', lambda: False)(),
+                "email": user.email,
+                "display_name": getattr(user, 'display_name', user.username), # Fallback to username if empty
             }, status=200)
         else:
             return JsonResponse({
                 "status": False,
                 "message": "Login failed, account is disabled."
             }, status=401)
-
     else:
         return JsonResponse({
             "status": False,
             "message": "Login failed, please check your username or password."
         }, status=401)
-    
+
 @csrf_exempt
 def register(request):
     # Only accept POST for registration
@@ -854,6 +855,33 @@ def delete_tournament(request):
             "status": False,
             "message": f"Error deleting tournament: {str(e)}"
         }, status=500)
+
+@csrf_exempt
+def get_user_tournaments(request):
+    if request.method != 'GET':
+        return JsonResponse({"status": False, "message": "Invalid request method."}, status=400)
+
+    if not request.user.is_authenticated:
+        return JsonResponse({"status": False, "message": "Authentication required."}, status=401)
+
+    user = request.user
+
+    tournaments = Tournament.objects.filter(
+        registrations__members__game_account__user=user
+    ).select_related('organizer', 'tournament_format__game')
+
+    data = []
+    for t in tournaments:
+        data.append({
+            "id": str(t.id),
+            "tournament_name": t.tournament_name,
+            "game": t.tournament_format.game.name,
+            "organizer": t.organizer.display_name if t.organizer else None,
+            "status": t.status,
+            "tournament_date": t.tournament_date.isoformat() if t.tournament_date else None,
+        })
+
+    return JsonResponse({"status": True, "tournaments": data}, status=200)
     
 @csrf_exempt
 def update_user(request):

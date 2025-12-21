@@ -160,7 +160,9 @@ def get_team(request: HttpRequest) -> HttpResponse:
             "team_id": <uuid>,
             "tournament_id": <uuid>,
             "team_name": <str>,
+            "user_id": <uuid>,
             "is_user_leader": <bool>,
+            "is_user_in_team": <bool>,
             "members": [
                 {
                     "game_account_id": <uuid>,
@@ -238,7 +240,7 @@ def get_team(request: HttpRequest) -> HttpResponse:
         "team_name": team.team_name,
         "user_id": request.user.id,
         "is_user_leader": _is_user_team_leader(request.user, team),
-        "is_user_in_team": TeamMember.objects.filter(team=team, game_account__user=request.user).exists(),
+        "is_user_in_team": _is_user_in_team(request.user, team),
         "members": member_data,
     })
 
@@ -373,10 +375,9 @@ def update_member(request: HttpRequest) -> HttpResponse:
     if game_account.user != request.user:
         raise RejectException('Game Account does not belong to user', ERR_NOT_AUTHORIZED)
 
-    try:
-        team_member: TeamMember = TeamMember.objects.get(team=team, game_account=game_account)
-    except TeamMember.DoesNotExist:
+    if not _is_user_in_team(request.user, team):
         raise RejectException('User is not part of this team', ERR_NOT_FOUND)
+    team_member: TeamMember = _get_user_in_team(request.user, team)
 
     team_member.game_account = game_account
     team_member.full_clean()
@@ -412,17 +413,13 @@ def delete_member(request: HttpRequest) -> HttpResponse:
     except TournamentRegistration.DoesNotExist:
         raise RejectException('Team does not exist', ERR_NOT_FOUND)
 
-    try:
-        team_member: TeamMember = TeamMember.objects.get(
-            team=team,
-            game_account__user=request.user,
-        )
-    except TeamMember.DoesNotExist:
+    if not _is_user_in_team(request.user, team):
         raise RejectException('User is not part of this team', ERR_NOT_FOUND)
 
     if _is_user_team_leader(request.user, team):
         raise RejectException('User is team leader', ERR_NOT_AUTHORIZED)
 
+    team_member: TeamMember = _get_user_in_team(request.user, team)
     team_member.delete()
     return success({})
 
@@ -437,3 +434,15 @@ def _is_user_team_leader(user: UserAccount, team: TournamentRegistration) -> boo
         is_leader=True,
         game_account__user=user,
     ).exists()
+
+def _is_user_in_team(user: UserAccount, team: TournamentRegistration) -> bool:
+    return TeamMember.objects.filter(
+        team=team,
+        game_account__user=user,
+    ).exists()
+
+def _get_user_in_team(user: UserAccount, team: TournamentRegistration) -> bool:
+    return TeamMember.objects.get(
+        team=team,
+        game_account__user=user,
+    )

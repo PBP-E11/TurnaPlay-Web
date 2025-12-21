@@ -18,5 +18,7 @@ urlpatterns = [
     path('dashboard/tournaments/', views.list_tournaments, name='list_tournaments'),
     path('dashboard/tournaments/<uuid:tournament_id>/', views.tournament_detail, name='tournament_detail'),
     path('dashboard/tournaments/delete/', views.delete_tournament, name='delete_tournament'),
+
+    path('get_user_tournaments/', views.get_user_tournaments, name='get_user_tournaments'),
     path('dashboard/tournaments/update/', views.update_tournament, name='update_tournament'),
 ]
