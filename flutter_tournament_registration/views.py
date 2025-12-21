@@ -64,7 +64,7 @@ def exception_wrapper(_F):
         try:
             return _F(request, *args, **kwargs)
         except RejectException as e:
-            return reject(e.error_message, e.error_code, e.status_code)
+            return reject(e.error_message, e.error_code)
         except:
             traceback.print_exc()
             return reject('Unexpected server error', ERR_UNEXPECTED_ERROR)
@@ -117,7 +117,7 @@ def create_team(request: HttpRequest) -> HttpResponse:
     if game_account.user != request.user:
         raise RejectException('Game Account does not belong to user', ERR_NOT_AUTHORIZED)
 
-    if Tournament.objects.filter(tournament=tournament, registrations__members__game_account__user=request.user).exists():
+    if Tournament.objects.filter(pk=tournament.id, registrations__members__game_account__user=request.user).exists():
         raise RejectException('User is already in a team', ERR_EXISTS)
 
     if TournamentRegistration.objects.filter(tournament=tournament_id, team_name=team_name).exists():
@@ -133,6 +133,7 @@ def create_team(request: HttpRequest) -> HttpResponse:
 
     return success({'team_id': str(instance.id)})
 
+@csrf_exempt
 @require_POST
 @exception_wrapper
 def get_team(request: HttpRequest) -> HttpResponse:
@@ -146,6 +147,10 @@ def get_team(request: HttpRequest) -> HttpResponse:
         "user_account_id": <uuid>,
         "tournament_id": <uuid>
     }
+    OR LOGGED IN
+    {
+        "tournament_id": <uuid>
+    }
 
     On success returns
     {
@@ -155,8 +160,8 @@ def get_team(request: HttpRequest) -> HttpResponse:
             "tournament_id": <uuid>,
             "team_name": <str>,
             "members": [
-                {"game_account_id": <uuid>, "is_leader": True}, # Once
-                {"game_account_id": <uuid>, "is_leader": False} # Up to (team size - 1)
+                {"game_account_id": <uuid>, "team_id": <uuid>, "is_leader": True}, # Once
+                {"game_account_id": <uuid>, "team_id": <uuid>, "is_leader": False} # Up to (team size - 1)
             ]
         }
     }
@@ -165,9 +170,9 @@ def get_team(request: HttpRequest) -> HttpResponse:
     """
     try:
         data: dict = json.loads(request.body)
-        team_id: uuid.UUID | None = data.get('team_id') ? uuid.UUID(data.get('team_id')): None
-        user_account_id: uuid.UUID | None = data.get('user_account_id') ? uuid.UUID(data.get('user_account_id')): None
-        tournament_id: uuid.UUID | None = data.get('tournament_id') ? uuid.UUID(data.get('tournament_id')): None
+        team_id: uuid.UUID | None = uuid.UUID(data.get('team_id')) if data.get('team_id') is not None else None
+        user_account_id: uuid.UUID | None = uuid.UUID(data.get('user_account_id')) if data.get('user_account_id') is not None else None
+        tournament_id: uuid.UUID | None = uuid.UUID(data.get('tournament_id')) if data.get('tournament_id') is not None else None
     except (KeyError, ValueError, json.JSONDecodeError):
         raise RejectException('Malformed data', ERR_MALFORMED_DATA)
 
@@ -182,15 +187,20 @@ def get_team(request: HttpRequest) -> HttpResponse:
             team: TournamentRegistration = TournamentRegistration.objects.get(pk=team_id)
         except TournamentRegistration.DoesNotExist:
             raise RejectException('Team does not exist', ERR_NOT_FOUND)
-    else:
-        try:
-            user_account: UserAccount = UserAccount.objects.get(pk=user_account_id)
-        except UserAccount.DoesNotExist:
-            raise RejectException('User does not exist', ERR_NOT_FOUND)
+    elif tournament_id is not None:
         try:
             tournament: Tournament = Tournament.objects.get(pk=tournament_id)
         except Tournament.DoesNotExist:
             raise RejectException('Tournament does not exist', ERR_NOT_FOUND)
+        if user_account_id is not None:
+            try:
+                user_account: UserAccount = UserAccount.objects.get(pk=user_account_id)
+            except UserAccount.DoesNotExist:
+                raise RejectException('User does not exist', ERR_NOT_FOUND)
+        elif request.user.is_authenticated:
+            user_account = request.user
+        else:
+            raise RejectException('Not logged in and no user provided', ERR_MALFORMED_DATA)
 
         try:
             team: TournamentRegistration = TournamentRegistration.objects.get(members__game_account__user=user_account, tournament=tournament)
@@ -200,11 +210,13 @@ def get_team(request: HttpRequest) -> HttpResponse:
     members = []
     members.append({
         "game_account_id": TeamMember.objects.get(team=team, is_leader=True).game_account.id,
+        "team_id": str(team.id),
         "is_leader": True,
     })
     [
         members.append({
             "game_account_id": member.game_account.id,
+            "team_id": str(team.id),
             "is_leader": False,
         })
         for member in TeamMember.objects.filter(team=team, is_leader=False)
