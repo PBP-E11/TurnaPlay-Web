@@ -27,10 +27,8 @@ def login(request):
                 "username": user.username,
                 "status": True,
                 "message": "Login successful!",
-                "id": user.id,
+                "id": user.id
                 # Add other data if you want to send data to Flutter.
-                "role": getattr(user, 'role', None),
-                "is_admin": getattr(user, 'is_admin', lambda: False)()
             }, status=200)
         else:
             return JsonResponse({
@@ -354,78 +352,7 @@ def user_detail(request, user_id):
     try:
         # Get user by ID
         user = User.objects.get(id=user_id)
-
-        # Get tournaments where user is a participant
-        participated_tournaments = Tournament.objects.filter(
-            registrations__members__game_account__user=user
-        ).distinct().select_related('organizer', 'tournament_format__game')
-        participated_tournaments_data = []
-        for tournament in participated_tournaments:
-            # Get all tournament registrations (teams)
-            registrations = TournamentRegistration.objects.filter(
-                tournament=tournament
-            ).prefetch_related('members__game_account__user')
-
-            registrations_data = []
-            for registration in registrations:
-                # Get team members
-                members_data = []
-                for member in registration.members.all():
-                    members_data.append({
-                        "id": str(member.id),
-                        "is_leader": member.is_leader,
-                        "game_account": {
-                            "id": str(member.game_account.id) if member.game_account else None,
-                            "ingame_name": member.game_account.ingame_name if member.game_account else None,
-                            "user": {
-                                "id": str(member.game_account.user.id) if member.game_account and member.game_account.user else None,
-                                "username": member.game_account.user.username if member.game_account and member.game_account.user else None,
-                                "display_name": member.game_account.user.display_name if member.game_account and member.game_account.user else None,
-                            } if member.game_account and member.game_account.user else None
-                        } if member.game_account else None
-                    })
-                
-                registrations_data.append({
-                    "id": str(registration.id),
-                    "team_name": registration.team_name,
-                    "created_at": registration.created_at.isoformat() if hasattr(registration, 'created_at') and registration.created_at else None,
-                    "members": members_data,
-                    "members_count": len(members_data)
-                })
-            participated_tournaments_data.append({
-                "id": str(tournament.id),
-                "tournament_name": tournament.tournament_name,
-                "description": tournament.description,
-                "tournament_date": tournament.tournament_date.isoformat() if tournament.tournament_date else None,
-                "prize_pool": tournament.prize_pool,
-                "banner": tournament.banner,
-                "team_maximum_count": tournament.team_maximum_count,
-                "status": tournament.status,
-                "participants_count": tournament.participants_count(),
-                "registrations": registrations_data,
-                "registrations_count": len(registrations_data),
-                "created_at": tournament.created_at.isoformat(),
-                "updated_at": tournament.updated_at.isoformat(),
-                
-                # Tournament Format info
-                "tournament_format": {
-                    "id": str(tournament.tournament_format.id),
-                    "name": tournament.tournament_format.name,
-                    "team_size": tournament.tournament_format.team_size,
-                    "game": {
-                        "id": str(tournament.tournament_format.game.id),
-                        "name": tournament.tournament_format.game.name
-                    }
-                },
-                
-                # Organizer info
-                "organizer": {
-                    "id": str(tournament.organizer.id) if tournament.organizer else None,
-                    "username": tournament.organizer.username if tournament.organizer else None,
-                    "display_name": tournament.organizer.display_name if tournament.organizer else None
-                } if tournament.organizer else None
-            })
-
+        
         # Data user
         user_data = {
             "id": str(user.id),
@@ -437,7 +364,11 @@ def user_detail(request, user_id):
             "is_active": user.is_active,
             "date_joined": user.date_joined.isoformat() if user.date_joined else None,
             "last_login": user.last_login.isoformat() if user.last_login else None,
-            "tournaments": participated_tournaments_data,
+            
+            # Additional statistics (to be implemented with related models)
+            # "tournaments_created": user.tournament_set.count() if user.is_organizer() else 0,
+            # "tournaments_participated": user.tournamentparticipant_set.count(),
+            # "game_accounts_count": user.gameaccount_set.count(),
         }
         
         return JsonResponse({
@@ -459,7 +390,7 @@ def user_detail(request, user_id):
 
 @csrf_exempt
 def delete_user(request, user_id):
-    if request.method != 'POST':
+    if request.method != 'DELETE':
         return JsonResponse({
             "status": False,
             "message": "Invalid method"
@@ -474,9 +405,6 @@ def delete_user(request, user_id):
     
     try:
         # Get user by ID
-        data = json.loads(request.body)
-        user_id = data.get('user_id')
-
         user = User.objects.get(id=user_id)
         
         # Prevent self-deletion
@@ -579,37 +507,6 @@ def list_tournaments(request):
         # Serialize tournament data
         tournaments_data = []
         for tournament in tournaments_page:
-            # Get all tournament registrations (teams)
-            registrations = TournamentRegistration.objects.filter(
-                tournament=tournament
-            ).prefetch_related('members__game_account__user')
-
-            registrations_data = []
-            for registration in registrations:
-                # Get team members
-                members_data = []
-                for member in registration.members.all():
-                    members_data.append({
-                        "id": str(member.id),
-                        "is_leader": member.is_leader,
-                        "game_account": {
-                            "id": str(member.game_account.id) if member.game_account else None,
-                            "ingame_name": member.game_account.ingame_name if member.game_account else None,
-                            "user": {
-                                "id": str(member.game_account.user.id) if member.game_account and member.game_account.user else None,
-                                "username": member.game_account.user.username if member.game_account and member.game_account.user else None,
-                                "display_name": member.game_account.user.display_name if member.game_account and member.game_account.user else None,
-                            } if member.game_account and member.game_account.user else None
-                        } if member.game_account else None
-                    })
-                
-                registrations_data.append({
-                    "id": str(registration.id),
-                    "team_name": registration.team_name,
-                    "created_at": registration.created_at.isoformat() if hasattr(registration, 'created_at') and registration.created_at else None,
-                    "members": members_data,
-                    "members_count": len(members_data)
-                })
             tournaments_data.append({
                 "id": str(tournament.id),
                 "tournament_name": tournament.tournament_name,
@@ -620,8 +517,6 @@ def list_tournaments(request):
                 "team_maximum_count": tournament.team_maximum_count,
                 "status": tournament.status,
                 "participants_count": tournament.participants_count(),
-                "registrations": registrations_data,
-                "registrations_count": len(registrations_data),
                 "created_at": tournament.created_at.isoformat(),
                 "updated_at": tournament.updated_at.isoformat(),
                 
@@ -775,8 +670,7 @@ def tournament_detail(request, tournament_id):
             },
             
             # Registration team
-            "registrations": registrations_data,
-            "registrations_count": len(registrations_data),
+            "registration": registrations_data,
 
             # Organizer
             "organizer": {
@@ -810,7 +704,7 @@ def tournament_detail(request, tournament_id):
 
 @csrf_exempt
 def delete_tournament(request, tournament_id):
-    if request.method != 'POST':
+    if request.method != 'DELETE':
         return JsonResponse({
             "status": False,
             "message": "Invalid method"
@@ -825,9 +719,6 @@ def delete_tournament(request, tournament_id):
     
     try:
         # Get tournament
-        data = json.loads(request.body)
-        tournament_id = data.get('tournament_id')
-        
         tournament = Tournament.objects.get(id=tournament_id)
         tournament_name = tournament.tournament_name
         
