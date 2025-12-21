@@ -31,9 +31,6 @@ class JsonResponseWithStatusCode(JsonResponse):
         super().__init__(*args, **kwargs)
         self.status_code = status_code
 
-class Http204(HttpResponse):
-    status_code = 204
-
 def success(data: dict, status_code: int = 200) -> HttpResponse:
     return JsonResponseWithStatusCode({
         'success': True,
@@ -269,7 +266,11 @@ def delete_team(request: HttpRequest) -> HttpResponse:
         "team_id": <uuid>
     }
 
-    On success returns 204 No Content
+    On success returns
+    {
+        "success": true,
+        "data": {}
+    }
     """
     try:
         team_id: uuid.UUID = uuid.UUID(json.loads(request.body)["team_id"])
@@ -285,7 +286,7 @@ def delete_team(request: HttpRequest) -> HttpResponse:
         raise RejectException('User is not team leader', ERR_NOT_AUTHORIZED)
 
     team.delete()
-    return Http204()
+    return success({})
 
 @csrf_exempt
 @require_POST
@@ -361,7 +362,10 @@ def delete_member(request: HttpRequest) -> HttpResponse:
         "team_id": <uuid>
     }
 
-    On success returns 204 No Content
+    On success returns {
+        "success": true,
+        "data": {}
+    }
     """
     try:
         team_id: uuid.UUID = uuid.UUID(json.loads(request.body)["team_id"])
@@ -385,7 +389,7 @@ def delete_member(request: HttpRequest) -> HttpResponse:
         raise RejectException('User is team leader', ERR_NOT_AUTHORIZED)
 
     team_member.delete()
-    return Http204()
+    return success({})
 
 # Mksh karla :>
 def _is_user_team_leader(user: UserAccount, team: TournamentRegistration) -> bool:
