@@ -210,11 +210,13 @@ def get_team(request: HttpRequest) -> HttpResponse:
     members = []
     members.append({
         "game_account_id": TeamMember.objects.get(team=team, is_leader=True).game_account.id,
+        "team_id": str(team.id),
         "is_leader": True,
     })
     [
         members.append({
             "game_account_id": member.game_account.id,
+            "team_id": str(team.id),
             "is_leader": False,
         })
         for member in TeamMember.objects.filter(team=team, is_leader=False)
