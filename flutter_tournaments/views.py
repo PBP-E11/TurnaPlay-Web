@@ -122,3 +122,45 @@ def get_tournaments_paginated(request):
         "next_page_number": page_obj.next_page_number() if page_obj.has_next() else None
     })
 
+def search_tournaments(request):
+    """
+    Search tournaments by name.
+    GET /api/tournaments/search/?q=<query>
+    """
+    query = request.GET.get('q', '').strip()
+    
+    if not query:
+        return JsonResponse({
+            "tournaments": [],
+            "count": 0
+        })
+    
+    # Case-insensitive search on tournament_name only
+    tournaments = Tournament.objects.filter(
+        tournament_name__icontains=query
+    ).order_by('-created_at')
+    
+    # Serialize data (same structure as paginated list)
+    data = []
+    for t in tournaments:
+        data.append({
+            "id": str(t.id),
+            "organizer_id": str(t.organizer.id) if t.organizer else None,
+            "tournament_format_id": str(t.tournament_format.id),
+            "tournament_name": t.tournament_name,
+            "description": t.description,
+            "tournament_date": t.tournament_date.isoformat() if t.tournament_date else None,
+            "prize_pool": t.prize_pool,
+            "banner": t.banner,
+            "team_maximum_count": t.team_maximum_count,
+            "created_at": t.created_at.isoformat(),
+            "updated_at": t.updated_at.isoformat(),
+            "is_active": t.is_active if hasattr(t, 'is_active') else True,
+            "status": t.status,
+            "participants_count": t.participants_count(),
+        })
+    
+    return JsonResponse({
+        "tournaments": data,
+        "count": len(data)
+    })

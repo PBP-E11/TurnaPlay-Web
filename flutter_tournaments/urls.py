@@ -8,4 +8,5 @@ urlpatterns = [
     path('games/', views.show_games_json, name='show-games-json'),
     path('formats/', views.show_formats_json, name='show-formats-json'),
     path('list/', views.get_tournaments_paginated, name='tournament-list'),
+    path('search/', views.search_tournaments, name='search-tournaments'),
 ]
