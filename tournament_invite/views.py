@@ -9,18 +9,12 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.db import IntegrityError, transaction
 from django.db.models import Max, Q, Count
-from django.http import (
-    HttpRequest,
-    HttpResponse,
-    JsonResponse,
-    HttpResponseBadRequest,
-)
+from django.http import (HttpRequest, HttpResponse, JsonResponse, HttpResponseBadRequest)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
 from .models import TournamentInvite
 
-# dependency ke app lain
 from user_account.models import UserAccount
 from game_account.models import GameAccount
 from tournament_registration.models import TournamentRegistration, TeamMember
@@ -36,7 +30,6 @@ def _team_size(team: TournamentRegistration) -> int:
 
 
 def _recompute_team_status(team: TournamentRegistration) -> None:
-    """Opsional: set team status valid/invalid berdasarkan ukuran tim terkini."""
     try:
         size = _team_size(team)
     except Exception:

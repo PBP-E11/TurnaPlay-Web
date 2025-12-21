@@ -75,6 +75,11 @@
 </div>
 
 <script>
+  const apiGameFormatsUrlPattern =
+    "{% url 'tournaments:api-game-formats' '00000000-0000-0000-0000-000000000000' %}";
+</script>
+
+<script>
   document.addEventListener("DOMContentLoaded", function () {
     const gameSelect =
       document.getElementById("id_game") ||
@@ -99,7 +104,10 @@
       try {
         // use the actual route (registered as 'api/games/<uuid:game_id>/formats/' in tournaments/urls.py)
         const url = new URL(
-          `/api/games/${encodeURIComponent(gameId)}/formats/`,
+          apiGameFormatsUrlPattern.replace(
+            "00000000-0000-0000-0000-000000000000",
+            gameId
+          ),
           window.location.origin
         );
         const res = await fetch(url.toString(), { method: "GET" });

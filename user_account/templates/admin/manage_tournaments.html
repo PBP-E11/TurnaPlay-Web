@@ -139,7 +139,7 @@
                                     </div>
                                     <div>
                                         <div class="text-xs text-gray-500 mb-0.5">Participants</div>
-                                        <div class="font-medium text-gray-900 text-sm">{{ tournament.participants_count }}/{{ tournament.team_maximum_count }}</div>
+                                        <div class="font-medium text-gray-900 text-sm">{{ tournament.registered_teams_count }}/{{ tournament.team_maximum_count }}</div>
                                     </div>
                                     <div class="flex gap-2">
                                         <a href="{% url 'user_account:admin_tournament_detail' tournament.id %}" class="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition">
